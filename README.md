@@ -97,7 +97,7 @@ Este é um dump completo de um projeto. Você está retomando do zero.
 ### dump_tree.sh
 
 #!/usr/bin/env bash
-# ... (conteúdo completo do script)
+etc etc (leia o arquivo)
 
 ...
 
