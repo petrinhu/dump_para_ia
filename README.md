@@ -138,8 +138,13 @@ O dump gerado é um arquivo `.md` com a seguinte estrutura:
 .
 ├── AGENTS.md
 ├── CHANGELOG.md
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
 ├── dump_tree.sh
-└── README.md
+├── .gitignore
+├── LICENSE
+├── README.md
+└── SECURITY.md
 ```
 
 **Conteúdo de cada arquivo** em bloco de código com highlight por linguagem:
