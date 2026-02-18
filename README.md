@@ -89,7 +89,6 @@ Este é um dump completo de um projeto. Você está retomando do zero.
 ├── LICENSE
 ├── README.md
 ├── SECURITY.md
-└── tree.txt
 
 ## Conteúdo dos Arquivos
 
