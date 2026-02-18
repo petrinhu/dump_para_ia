@@ -1,0 +1,34 @@
+# Arquivos gerados pelo dump_tree.sh
+dump.txt
+dump_*.txt
+dump.txt.sha256
+dump_*.txt.sha256
+dump.md
+dump_*.md
+dump.md.sha256
+dump_*.md.sha256
+dump.log
+dump_*.log
+tree.txt
+tree_*.txt
+
+# Arquivos de sistema comuns
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# Diretórios de build comuns (adicionados por segurança)
+build/
+dist/
+out/
+bin/
+obj/
+
+# Ambientes virtuais e dependências
+venv/
+.env/
+node_modules/
