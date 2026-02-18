@@ -1,16 +1,16 @@
 # Arquivos gerados pelo dump_tree.sh
-dump.txt
-dump_*.txt
-dump.txt.sha256
-dump_*.txt.sha256
 dump.md
 dump_*.md
 dump.md.sha256
 dump_*.md.sha256
 dump.log
 dump_*.log
-tree.txt
-tree_*.txt
+
+# Dumps em formato legado (.txt) — mantidos por retrocompatibilidade
+dump.txt
+dump_*.txt
+dump.txt.sha256
+dump_*.txt.sha256
 
 # Arquivos de sistema comuns
 .DS_Store
@@ -21,7 +21,7 @@ Thumbs.db
 *.bak
 *.tmp
 
-# Diretórios de build comuns (adicionados por segurança)
+# Diretórios de build comuns
 build/
 dist/
 out/
@@ -31,4 +31,5 @@ obj/
 # Ambientes virtuais e dependências
 venv/
 .env/
+.env*
 node_modules/

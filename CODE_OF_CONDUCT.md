@@ -26,4 +26,17 @@ Mantenedores têm direito e responsabilidade de remover, editar ou rejeitar come
 
 ## Denúncias
 
-Reporte imediatamente aos mantenedores qualquer comportamento inaceitável.
+Para reportar comportamento inaceitável, envie um email para **petrinhu@yahoo.com.br** com:
+
+- Descrição do ocorrido
+- Links ou evidências relevantes (capturas de tela, URLs)
+- Contexto adicional que considere útil
+
+**Processo após a denúncia:**
+
+- Confirmação de recebimento em até 48h
+- Análise do caso com imparcialidade e confidencialidade
+- Resposta com a decisão tomada em até 14 dias
+- O denunciante pode solicitar atualização do status a qualquer momento
+
+A identidade do denunciante será mantida em sigilo, salvo quando a divulgação for legalmente necessária.
