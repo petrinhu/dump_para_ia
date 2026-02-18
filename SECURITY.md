@@ -5,7 +5,7 @@
 Se encontrar uma vulnerabilidade de segurança:
 
 1. Não abra issue pública
-2. Envie email para [insira seu email ou contato] com:
+2. Envie email para petrinhu@yahoo.com.br com:
    - Descrição detalhada
    - Passos para reproduzir
    - Impacto potencial
