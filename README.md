@@ -65,7 +65,7 @@ Opção               Descrição
 ## Exemplo de dump gerado (baseado na estrutura real do projeto)
 
 # Dump do Projeto: dump_tree
-Diretório raiz: /home/petrus/projeto_dump
+Diretório raiz: ./projeto_dump
 Gerado em (ISO): 2026-02-18T15:42:03-03:00
 Distro        : fedora
 Comentário    : versão inicial com instruções para IA
