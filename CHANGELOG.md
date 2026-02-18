@@ -1,6 +1,6 @@
-# CHANGELOG
+# CHANGELOG — dump_tree.sh
 
-Todas as mudanças notáveis serão documentadas neste arquivo no formato [Keep a Changelog](https://keepachangelog.com/).
+Repositório: https://github.com/petrinhu/dump_para_ia
 
 ## [Unreleased]
 

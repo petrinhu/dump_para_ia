@@ -160,6 +160,28 @@ COMENTARIO="${COMENTARIO:-}"
 EXCLUDE_DIRS=( "build" ".git" ".cache" "Testing" )
 TREE_EXCLUDE="build|.git|.cache|Testing"
 
+# Variáveis de controle de limpeza (usadas no trap)
+DUMP_FILE=""
+CHECKSUM_FILE=""
+LOG_FILE=""
+DUMP_COMPLETO=0
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TRAP — limpeza em caso de interrupção ou erro inesperado
+# ══════════════════════════════════════════════════════════════════════════════
+cleanup() {
+    local exit_code=$?
+    # Só age se estava no meio de uma geração e o dump não foi concluído
+    if [[ -n "$DUMP_FILE" && -f "$DUMP_FILE" && "$DUMP_COMPLETO" -eq 0 ]]; then
+        (( ! QUIET )) && echo ""
+        erro "Execução interrompida antes da conclusão."
+        erro "Dump parcial removido: ${DUMP_FILE}"
+        rm -f "${DUMP_FILE}" "${CHECKSUM_FILE:-}" "${LOG_FILE:-}"
+    fi
+    exit "$exit_code"
+}
+trap cleanup EXIT INT TERM
+
 # ─── Suporte a opções longas ──────────────────────────────────────────────────
 ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -239,6 +261,29 @@ if [[ "$MODE" == "help" ]]; then
     exit 0
 fi
 
+# ─── Valida --max-tokens como inteiro positivo ────────────────────────────────
+if [[ -n "$MAX_TOKENS" && "$MAX_TOKENS" != "0" ]]; then
+    if ! [[ "$MAX_TOKENS" =~ ^[0-9]+$ ]] || (( MAX_TOKENS == 0 )); then
+        erro "--max-tokens requer um número inteiro positivo. Recebido: '${MAX_TOKENS}'"
+        exit 1
+    fi
+fi
+
+# ─── Valida -o contra path traversal ─────────────────────────────────────────
+if [[ -n "$ONLY_SUBDIR" ]]; then
+    # Resolve o caminho real e verifica se está dentro de ROOT_DIR
+    RESOLVED_SUBDIR="$(realpath "${ROOT_DIR}/${ONLY_SUBDIR}" 2>/dev/null || true)"
+    if [[ -z "$RESOLVED_SUBDIR" || "$RESOLVED_SUBDIR" != "${ROOT_DIR}"/* ]]; then
+        erro "Subpasta '${ONLY_SUBDIR}' está fora do diretório raiz do projeto."
+        erro "Use um caminho relativo dentro de: ${ROOT_DIR}"
+        exit 1
+    fi
+    if [[ ! -d "$RESOLVED_SUBDIR" ]]; then
+        erro "Subpasta '${ONLY_SUBDIR}' não encontrada em ${ROOT_DIR}."
+        exit 1
+    fi
+fi
+
 # ─── Verifica e instala dependências (após help para não bloquear -h) ─────────
 check_and_install_deps() {
     local distro
@@ -314,6 +359,9 @@ CHECKSUM_FILE="${DUMP_FILE}.sha256"
 # MODO VERIFICAR (-v)
 # ══════════════════════════════════════════════════════════════════════════════
 if [[ "$MODE" == "verificar" ]]; then
+    # Desativa o trap de limpeza — não há arquivo sendo gerado aqui
+    trap - EXIT INT TERM
+
     # Se não existe dump.md e -t não foi passado, tenta o dump com timestamp mais recente
     if [[ ! -f "${DUMP_FILE}" ]] && (( ! USE_TIMESTAMP )); then
         LATEST="$(ls -t dump_*.md 2>/dev/null | head -1 || true)"
@@ -331,9 +379,23 @@ if [[ "$MODE" == "verificar" ]]; then
     echo "  Checksum : ${CHECKSUM_FILE}"
     echo ""
 
-    [[ ! -f "${DUMP_FILE}" ]]     && erro "Arquivo '${DUMP_FILE}' não encontrado."     && exit 1
-    [[ ! -f "${CHECKSUM_FILE}" ]] && erro "Arquivo '${CHECKSUM_FILE}' não encontrado." \
-                                  && erro "Gere o dump novamente com -g." && exit 1
+    if [[ ! -f "${DUMP_FILE}" ]]; then
+        erro "Arquivo '${DUMP_FILE}' não encontrado."
+        erro "Gere o dump primeiro com: ./dump_tree.sh -g"
+        exit 1
+    fi
+
+    if [[ ! -f "${CHECKSUM_FILE}" ]]; then
+        erro "Arquivo de checksum '${CHECKSUM_FILE}' não encontrado."
+        erro "O dump pode ter sido gerado sem checksum ou foi removido."
+        erro "Gere o dump novamente com: ./dump_tree.sh -g"
+        exit 1
+    fi
+
+    if [[ ! -r "${DUMP_FILE}" ]]; then
+        erro "Sem permissão de leitura em '${DUMP_FILE}'."
+        exit 1
+    fi
 
     echo "  Calculando SHA-256..."
     if sha256sum -c "${CHECKSUM_FILE}" 2>/dev/null; then
@@ -346,12 +408,6 @@ if [[ "$MODE" == "verificar" ]]; then
         exit 2
     fi
     exit 0
-fi
-
-# ─── Valida -o ────────────────────────────────────────────────────────────────
-if [[ -n "$ONLY_SUBDIR" && ! -d "${ROOT_DIR}/${ONLY_SUBDIR}" ]]; then
-    erro "Subpasta '${ONLY_SUBDIR}' não encontrada em ${ROOT_DIR}."
-    exit 1
 fi
 
 # ─── Função auxiliar de confirmação ───────────────────────────────────────────
@@ -371,9 +427,11 @@ confirmar() {
 if [[ "$MODE" == "gerar" ]] && (( ! FORCE )); then
     high_signals=0 medium_signals=0 low_signals=0
 
-    if [[ -d ".git" ]] || ls CMakeLists.txt Makefile meson.build build.gradle \
-            pom.xml package.json Cargo.toml pyproject.toml setup.py \
-            composer.json go.mod 2>/dev/null | grep -q .; then
+    # Usa subshell para evitar que o 'set -e' mate o script quando ls não encontra arquivos
+    if [[ -d ".git" ]] || \
+       ( ls CMakeLists.txt Makefile meson.build build.gradle pom.xml \
+             package.json Cargo.toml pyproject.toml setup.py \
+             composer.json go.mod 2>/dev/null | grep -q . ) ; then
         high_signals=1
     fi
 
@@ -383,11 +441,11 @@ if [[ "$MODE" == "gerar" ]] && (( ! FORCE )); then
             -name "*.go"   -o -name "*.java" -o -name "*.sh"  -o \
             -name "*.rb"   -o -name "*.php"  -o -name "*.kt"  -o \
             -name "*.cs"   -o -name "*.lua" \
-        \) -print -quit 2>/dev/null | grep -q .; then
+        \) -print -quit 2>/dev/null | grep -q . ; then
         medium_signals=1
     fi
 
-    if ls README.md LICENSE 2>/dev/null | grep -q .; then
+    if ls README.md LICENSE 2>/dev/null | grep -q . ; then
         low_signals=1
     fi
 
@@ -401,6 +459,35 @@ if [[ "$MODE" == "gerar" ]] && (( ! FORCE )); then
             { erro "Operação cancelada."; exit 1; }
     fi
 fi
+
+# ─── Verifica permissão de escrita no diretório atual ─────────────────────────
+if [[ ! -w "${ROOT_DIR}" ]]; then
+    erro "Sem permissão de escrita em '${ROOT_DIR}'."
+    erro "Verifique as permissões do diretório e tente novamente."
+    exit 1
+fi
+
+# ─── Verifica espaço em disco disponível ──────────────────────────────────────
+verificar_espaco() {
+    local disponivel_kb
+    disponivel_kb=$(df -k "${ROOT_DIR}" 2>/dev/null | awk 'NR==2 {print $4}')
+    if [[ -z "$disponivel_kb" ]]; then
+        warn "Não foi possível verificar o espaço em disco disponível."
+        return
+    fi
+    # Estimativa conservadora: total de arquivos + 20% de overhead do Markdown
+    local total_kb
+    total_kb=$(du -sk "${SEARCH_ROOT:-${ROOT_DIR}}" 2>/dev/null | awk '{print $1}')
+    if [[ -z "$total_kb" ]]; then return; fi
+    local necessario_kb=$(( total_kb + total_kb / 5 ))
+    if (( necessario_kb > disponivel_kb )); then
+        erro "Espaço em disco insuficiente."
+        erro "  Necessário (estimado) : ${necessario_kb}KB"
+        erro "  Disponível            : ${disponivel_kb}KB"
+        erro "Libere espaço e tente novamente, ou use -o/-d/-e para reduzir o escopo."
+        exit 1
+    fi
+}
 
 # ─── Detecta linguagem (retorna identificador de bloco de código Markdown) ────
 detect_language() {
@@ -465,7 +552,7 @@ declare -a FIND_EXCLUDES=()
 build_find_excludes FIND_EXCLUDES
 
 SEARCH_ROOT="${ROOT_DIR}"
-[[ -n "$ONLY_SUBDIR" ]] && SEARCH_ROOT="${ROOT_DIR}/${ONLY_SUBDIR}"
+[[ -n "$ONLY_SUBDIR" ]] && SEARCH_ROOT="${RESOLVED_SUBDIR}"
 
 mapfile -t FILES < <(
     find "${SEARCH_ROOT}" \
@@ -475,6 +562,18 @@ mapfile -t FILES < <(
 )
 
 TOTAL=${#FILES[@]}
+
+# ─── Aviso de dump vazio ──────────────────────────────────────────────────────
+if (( TOTAL == 0 )); then
+    erro "Nenhum arquivo encontrado para incluir no dump."
+    if [[ -n "$ONLY_SUBDIR" ]]; then
+        erro "O escopo '${ONLY_SUBDIR}/' está vazio ou todos os arquivos foram excluídos."
+    else
+        erro "Verifique as opções -d, -e e --max-tokens para ver se o escopo está muito restrito."
+    fi
+    exit 1
+fi
+
 LOG_ENTRIES=()
 log() { LOG_ENTRIES+=( "$(date '+%H:%M:%S') $*" ); }
 log "Arquivos encontrados: ${TOTAL}"
@@ -508,7 +607,10 @@ flush_log() {
 if (( MAX_TOKENS > 0 )); then
     EST_BYTES_PRE=0
     for fp in "${FILES[@]}"; do
-        EST_BYTES_PRE=$(( EST_BYTES_PRE + $(stat -c%s "${fp}") ))
+        # Arquivo pode ter sumido entre find e stat (race condition) — trata com segurança
+        if [[ -f "$fp" ]]; then
+            EST_BYTES_PRE=$(( EST_BYTES_PRE + $(stat -c%s "${fp}") ))
+        fi
     done
     # Fator 3.5 para melhor precisão com texto em PT-BR (UTF-8 multibyte)
     EST_TOKENS_PRE=$(( EST_BYTES_PRE * 2 / 7 ))
@@ -529,15 +631,33 @@ processar_arquivo() {
     local modo="$2"       # "dry" ou "dump"
     local dump_dest="${3:-}"
 
+    # Race condition: arquivo pode ter sido removido após o find
+    if [[ ! -f "$filepath" ]]; then
+        if [[ "$modo" == "dump" ]]; then
+            local rel_missing="${filepath#"${ROOT_DIR}/"}"
+            {
+                echo ""
+                echo "---"
+                echo ""
+                echo "### \`${rel_missing}\`  — ARQUIVO REMOVIDO DURANTE A EXECUÇÃO"
+                echo ""
+            } >> "${dump_dest}"
+            log "AVISO: arquivo removido durante execução: ${rel_missing}"
+        fi
+        echo "ok"
+        return
+    fi
+
     local rel_path="${filepath#"${ROOT_DIR}/"}"
     local lang
     lang=$(detect_language "$(basename "${filepath}")")
+
     local raw_bytes
-    raw_bytes=$(stat -c%s "${filepath}")
+    raw_bytes=$(stat -c%s "${filepath}" 2>/dev/null || echo "0")
     local size_kb=$(( (raw_bytes + 1023) / 1024 ))
 
     # Binário?
-    if ! file --mime-type "${filepath}" | grep -qE 'text/|xml|json|x-empty'; then
+    if ! file --mime-type "${filepath}" 2>/dev/null | grep -qE 'text/|xml|json|x-empty'; then
         if [[ "$modo" == "dry" ]]; then
             echo -e "${C_YELLOW}  [BINÁRIO  ]${C_RESET} ${rel_path}"
         else
@@ -590,10 +710,10 @@ processar_arquivo() {
         else
             {
                 printf '```\n\n'
-                echo "> ⚠ ERRO: não foi possível ler \`${rel_path}\`"
+                echo "> ⚠ ERRO: sem permissão de leitura em \`${rel_path}\` — arquivo ignorado"
                 echo ""
             } >> "${dump_dest}"
-            log "ERRO ao ler: ${rel_path}"
+            log "ERRO de leitura: ${rel_path}"
         fi
     fi
 }
@@ -602,6 +722,9 @@ processar_arquivo() {
 # MODO DRY-RUN (-g -n)
 # ══════════════════════════════════════════════════════════════════════════════
 if (( DRY_RUN )); then
+    # Desativa trap de limpeza — dry-run não cria arquivos
+    trap - EXIT INT TERM
+
     titulo "╔══════════════════════════════════════════════════════════════╗"
     titulo "║  DRY-RUN — arquivos que seriam incluídos no dump             ║"
     titulo "╚══════════════════════════════════════════════════════════════╝"
@@ -613,7 +736,7 @@ if (( DRY_RUN )); then
 
     for filepath in "${FILES[@]}"; do
         COUNT=$((COUNT + 1))
-        raw_bytes=$(stat -c%s "${filepath}")
+        raw_bytes=$(stat -c%s "${filepath}" 2>/dev/null || echo "0")
         EST_BYTES=$(( EST_BYTES + raw_bytes ))
 
         result=$(processar_arquivo "${filepath}" "dry")
@@ -645,16 +768,22 @@ fi
 (( ! QUIET )) && echo ""
 (( ! QUIET )) && titulo "→ Gerando dump em '${DUMP_FILE}'..."
 
-# Info git
+# Verifica espaço antes de começar a escrever
+verificar_espaco
+
+# Info git (falha silenciosa se git não estiver disponível ou não for repositório)
 GIT_INFO=""
-if git -C "${ROOT_DIR}" rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
-    GIT_BRANCH="$(git -C "${ROOT_DIR}" branch --show-current 2>/dev/null || echo "detached")"
-    GIT_COMMIT="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
-    GIT_INFO="${GIT_BRANCH} @ ${GIT_COMMIT}"
+if command -v git &>/dev/null; then
+    if git -C "${ROOT_DIR}" rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
+        GIT_BRANCH="$(git -C "${ROOT_DIR}" branch --show-current 2>/dev/null || echo "detached")"
+        GIT_COMMIT="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
+        GIT_INFO="${GIT_BRANCH} @ ${GIT_COMMIT}"
+    fi
 fi
 
 EXCLUDED_LIST="${EXCLUDE_DIRS[*]}"
 
+# Cria o dump — a partir daqui o trap de limpeza está ativo
 : > "${DUMP_FILE}"
 log "Iniciando geração do dump"
 
@@ -705,7 +834,8 @@ fi
     echo "## Estrutura do Projeto"
     echo ""
     echo '```'
-    tree -a --noreport -I "${TREE_EXCLUDE}" "${SEARCH_ROOT}"
+    tree -a --noreport -I "${TREE_EXCLUDE}" "${SEARCH_ROOT}" 2>/dev/null || \
+        echo "(tree não disponível ou diretório vazio)"
     echo '```'
     echo ""
     echo "## Conteúdo dos Arquivos"
@@ -719,7 +849,7 @@ COUNT=0; SKIP_BIN=0; SKIP_LARGE=0; TOTAL_BYTES=0
 
 for filepath in "${FILES[@]}"; do
     COUNT=$((COUNT + 1))
-    raw_bytes=$(stat -c%s "${filepath}")
+    raw_bytes=$(stat -c%s "${filepath}" 2>/dev/null || echo "0")
     TOTAL_BYTES=$(( TOTAL_BYTES + raw_bytes ))
 
     (( ! QUIET )) && printf "\r   Processando: %d/%d — %-55s" \
@@ -770,6 +900,9 @@ log "Tokens estimados: ~${EST_TOKENS}"
 sha256sum "${DUMP_FILE}" > "${CHECKSUM_FILE}"
 log "Checksum SHA-256 gerado: ${CHECKSUM_FILE}"
 flush_log
+
+# Sinaliza ao trap que a geração foi concluída com sucesso — não deve limpar
+DUMP_COMPLETO=1
 
 # ─── Resumo no terminal ───────────────────────────────────────────────────────
 if (( ! QUIET )); then
